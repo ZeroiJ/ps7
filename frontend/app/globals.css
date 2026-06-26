@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --color-chroma-bg: #ffffff;
+  --color-chroma-muted: #f6f6f6;
+  --color-chroma-border: #e8e8e8;
+  --color-chroma-fg: #070707;
+  --color-chroma-muted-fg: #7b7b7b;
+  --color-chroma-primary: #141414;
+  --color-chroma-primary-fg: #ffffff;
+  --color-chroma-success: #4ade80;
+  --color-chroma-warning: #eab308;
+  --color-chroma-error: #ef4444;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+:root {
+  --chroma-bg: #ffffff;
+  --chroma-muted: #f6f6f6;
+  --chroma-border: #e8e8e8;
+  --chroma-fg: #070707;
+  --chroma-muted-fg: #7b7b7b;
+  --chroma-primary: #141414;
+}
+
+[data-theme='dark'] {
+  --chroma-bg: #0a0a0a;
+  --chroma-muted: #1a1a1a;
+  --chroma-border: #2a2a2a;
+  --chroma-fg: #ededed;
+  --chroma-muted-fg: #999999;
+  --chroma-primary: #ededed;
+}
+
+body {
+  background: var(--chroma-bg);
+  color: var(--chroma-fg);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+@keyframes pulse-ring {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+
+.animate-slide-in {
+  animation: slide-in-right 0.3s ease-out forwards;
+}
+
+.animate-slide-out {
+  animation: slide-out-right 0.3s ease-in forwards;
+}
