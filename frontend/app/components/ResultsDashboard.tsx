@@ -104,7 +104,7 @@ export default function ResultsDashboard({ result }: ResultsDashboardProps) {
       )}
 
       {/* Metric cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         <MetricCard
           label="Period"
           value={tls_result.period.toFixed(4)}
@@ -115,7 +115,13 @@ export default function ResultsDashboard({ result }: ResultsDashboardProps) {
           value={tls_result.depth.toFixed(1)}
           unit="ppm"
         />
+        <MetricCard
+          label="Duration"
+          value={tls_result.duration.toFixed(1)}
+          unit="hrs"
+        />
         <MetricCard label="SNR" value={tls_result.snr.toFixed(1)} />
+        <MetricCard label="SDE" value={tls_result.sde.toFixed(1)} />
         <MetricCard
           label="Confidence"
           value={(classification.confidence * 100).toFixed(1)}

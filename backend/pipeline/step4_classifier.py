@@ -143,8 +143,13 @@ def mock_classify(features: Dict, target_name: str = "") -> Dict:
     is_known = any(known in target_name for known in KNOWN_PLANETS)
 
     if is_known:
-        # High confidence planet for known systems
-        probs = np.array([0.94, 0.03, 0.02, 0.01])
+        # Scale confidence based on SDE even for known planets
+        if sde >= 8.0:
+            probs = np.array([0.94, 0.03, 0.02, 0.01])
+        elif sde >= 5.0:
+            probs = np.array([0.65, 0.15, 0.10, 0.10])
+        else:
+            probs = np.array([0.35, 0.25, 0.20, 0.20])
     else:
         # Heuristic-based classification
         probs = _heuristic_classify(
@@ -153,10 +158,19 @@ def mock_classify(features: Dict, target_name: str = "") -> Dict:
 
     class_names = ["PLANET", "ECLIPSING_BINARY", "BLEND", "FALSE_POSITIVE"]
     pred_idx = int(np.argmax(probs))
+    
+    predicted = class_names[pred_idx]
+    if pred_idx == 0:
+        if sde >= 8.0:
+            predicted = "PLANET"
+        elif sde >= 5.0:
+            predicted = "CANDIDATE"
+        else:
+            predicted = "WEAK_SIGNAL"
 
     return {
         "class_probs": probs.tolist(),
-        "predicted_class": class_names[pred_idx],
+        "predicted_class": predicted,
         "confidence": float(probs[pred_idx]),
     }
 

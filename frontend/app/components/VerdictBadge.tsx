@@ -24,6 +24,16 @@ const verdictConfig: Record<
     bg: "bg-chroma-warning/15",
     text: "text-yellow-700",
   },
+  candidate: {
+    label: "Planet Candidate",
+    bg: "bg-chroma-success/15",
+    text: "text-green-700",
+  },
+  weak_signal: {
+    label: "Weak Signal",
+    bg: "bg-chroma-warning/15",
+    text: "text-yellow-700",
+  },
   fp: {
     label: "False Positive",
     bg: "bg-chroma-error/15",
@@ -41,7 +51,7 @@ interface VerdictBadgeProps {
 }
 
 export default function VerdictBadge({ verdict }: VerdictBadgeProps) {
-  const config = verdictConfig[verdict] || verdictConfig.fp;
+  const config = verdictConfig[verdict?.toLowerCase()] || verdictConfig.fp;
 
   return (
     <span
