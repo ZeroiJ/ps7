@@ -19,12 +19,14 @@ import io
 import zipfile
 import tempfile
 import textwrap
+import shutil
+import logging
 
 import pandas as pd
 import numpy as np
 
 from models import UploadResponse, ProcessResponse, ErrorResponse, PipelineResult
-from mock_pipeline import run_mock_pipeline
+from real_pipeline import run_real_pipeline
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -167,11 +169,6 @@ def _parse_preview(path: Path, ext: str, raw_bytes: bytes):
         columns = list(npz.files)
         shapes = {k: list(npz[k].shape) for k in columns}
         rows = shapes[columns[0]][0] if columns else 0
-        # Preview: show first 5 values per array
-        preview = [
-            {k: npz[k][:5].tolist() if npz[k].ndim >= 1 else [float(npz[k])]}
-            for k in columns
-        ]
         # Reshape preview to row-oriented for consistency
         preview = [{"array": k, "shape": shapes[k],
                      "first_5": npz[k].flat[:5].tolist()} for k in columns]
@@ -208,7 +205,8 @@ async def process_file(job_id: str):
     job["status"] = "processing"
 
     try:
-        result_dict = run_mock_pipeline(file_path, filename)
+        # Execute real pipeline
+        result_dict = run_real_pipeline(file_path, filename)
     except Exception as exc:
         job["status"] = "error"
         job["error"] = str(exc)
@@ -228,47 +226,54 @@ async def process_file(job_id: str):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/sample-data", response_model=UploadResponse)
-async def sample_data():
-    """Generate and return a built-in sample dataset (TOI-270 style)."""
-
-    rng = np.random.default_rng(42)
-    n = 1200
-    time = np.sort(rng.uniform(0, 27.4, n))
-    period = 5.66
-    phase = ((time % period) / period + 0.5) % 1.0 - 0.5
-
-    flux = np.ones(n)
-    in_transit = np.abs(phase) < 0.02
-    flux[in_transit] -= 0.0012
-    flux += rng.normal(0, 0.0003, n)
-    flux_err = np.full(n, 0.0003) + rng.uniform(0, 0.0001, n)
-
-    df = pd.DataFrame({
-        "time": np.round(time, 6),
-        "flux": np.round(flux, 6),
-        "flux_err": np.round(flux_err, 6),
-    })
-
-    job_id = uuid.uuid4().hex[:12]
-    save_path = TEMP_DIR / f"{job_id}.csv"
-    df.to_csv(save_path, index=False)
-
-    filename = "toi_270_sample.csv"
+@app.post("/api/sample-data", response_model=UploadResponse)
+async def get_sample_data(target: str = "TOI-270"):
+    """Return a pre-packaged real TESS light curve as an upload."""
+    sample_dir = Path(__file__).resolve().parent / "sample_data"
+    
+    # Map target names to filenames
+    sample_files = {
+        "TOI-270": "TOI_270.npz",
+        "TOI-700": "TOI_700.npz",
+        "TOI-178": "TOI_178.npz",
+        "TOI-1231": "TOI_1231.npz",
+        "TOI-2180": "TOI_2180.npz",
+    }
+    
+    filename = sample_files.get(target, "TOI_270.npz")
+    filepath = sample_dir / filename
+    
+    if not filepath.exists():
+        raise HTTPException(404, f"Sample data not found for {target}")
+    
+    # Simulate an upload by creating a temp copy and registering a job
+    job_id = str(uuid.uuid4().hex[:12])
+    ext = ".npz"
+    save_path = TEMP_DIR / f"{job_id}{ext}"
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(filepath, save_path)
+    
+    # Parse and return preview (same logic as upload endpoint)
+    npz = np.load(save_path, allow_pickle=False)
+    columns = list(npz.files)
+    shapes = {k: list(npz[k].shape) for k in columns}
+    rows = shapes[columns[0]][0] if columns else 0
+    preview = [{"array": k, "shape": shapes[k],
+                "first_5": npz[k].flat[:5].tolist()} for k in columns]
+    
     job_store[job_id] = {
         "status": "uploaded",
-        "filename": filename,
         "file_path": str(save_path),
+        "filename": filename,
     }
-
-    preview = df.head(5).to_dict(orient="records")
-
+    
     return UploadResponse(
         job_id=job_id,
         filename=filename,
-        rows=n,
-        columns=["time", "flux", "flux_err"],
+        rows=rows,
+        columns=columns,
         preview=preview,
-        message="Sample TOI-270 light curve loaded (1200 cadences, 27.4 days).",
+        message="Sample data loaded",
     )
 
 
