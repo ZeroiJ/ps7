@@ -5,6 +5,10 @@ Neural network classifier for transit signals (Planet, EB, Blend, False Positive
 
 from typing import Dict, List
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 
 # Known exoplanet hosts for mock high-confidence classification
 KNOWN_PLANETS = {
@@ -16,6 +20,97 @@ KNOWN_PLANETS = {
     "TOI-1231": "TOI-1231 b (sub-Neptune)",
     "TOI-2180": "TOI-2180 b (long-period giant)",
 }
+
+
+class ExoVetterClassifier(nn.Module):
+    """
+    CNN + Dense classifier for transit signals.
+    
+    Architecture:
+    - CNN branch: processes 2000-point folded curve
+    - Dense branch: processes 11 physics+stats+diagnostic features
+    - Shared head: concatenated features -> dense layers -> 4-class softmax
+    """
+
+    def __init__(
+        self,
+        curve_length: int = 2000,
+        n_features: int = 11,
+        n_classes: int = 4,
+        cnn_channels: List[int] = [1, 16, 32, 64],
+        dense_hidden: List[int] = [64, 32],
+        dropout: float = 0.3,
+    ):
+        super().__init__()
+
+        # CNN branch for folded curve
+        cnn_layers = []
+        in_ch = 1
+        for out_ch in cnn_channels[1:]:
+            cnn_layers.extend([
+                nn.Conv1d(in_ch, out_ch, kernel_size=7, padding=3),
+                nn.BatchNorm1d(out_ch),
+                nn.ReLU(),
+                nn.MaxPool1d(2),
+            ])
+            in_ch = out_ch
+        self.cnn = nn.Sequential(*cnn_layers)
+
+        # Calculate CNN output size
+        with torch.no_grad():
+            dummy = torch.zeros(1, 1, curve_length)
+            cnn_out = self.cnn(dummy)
+            cnn_flat_size = cnn_out.numel()
+
+        # Dense branch for tabular features
+        dense_layers = []
+        in_f = n_features
+        for h in dense_hidden:
+            dense_layers.extend([
+                nn.Linear(in_f, h),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            ])
+            in_f = h
+        self.dense_branch = nn.Sequential(*dense_layers)
+
+        # Shared head
+        head_input = cnn_flat_size + in_f
+        self.head = nn.Sequential(
+            nn.Linear(head_input, 128),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, n_classes),
+        )
+
+    def forward(self, curve: torch.Tensor, features: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            curve: (batch, 1, 2000) folded light curve
+            features: (batch, 11) tabular features
+        Returns:
+            logits: (batch, 4) raw logits
+        """
+        # CNN branch
+        cnn_out = self.cnn(curve)
+        cnn_flat = cnn_out.view(cnn_out.size(0), -1)
+
+        # Dense branch
+        dense_out = self.dense_branch(features)
+
+        # Concatenate and classify
+        combined = torch.cat([cnn_flat, dense_out], dim=1)
+        logits = self.head(combined)
+        return logits
+
+
+def create_model() -> ExoVetterClassifier:
+    """Create a new untrained model instance."""
+    return ExoVetterClassifier()
+
 
 def mock_classify(features: Dict, target_name: str = "") -> Dict:
     """
@@ -140,3 +235,45 @@ def classify(features: Dict, target_name: str = "") -> Dict:
         Dictionary with class_probs, predicted_class, confidence
     """
     return mock_classify(features, target_name)
+
+
+def load_trained_model(model_path: str) -> ExoVetterClassifier:
+    """Load a trained model from checkpoint."""
+    model = create_model()
+    checkpoint = torch.load(model_path, map_location="cpu")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    return model
+
+
+def predict_with_model(
+    model: ExoVetterClassifier,
+    features: Dict,
+) -> Dict:
+    """
+    Run inference with a trained model.
+
+    Args:
+        model: Trained ExoVetterClassifier
+        features: Feature dictionary from step3_features
+
+    Returns:
+        Dictionary with class_probs, predicted_class, confidence
+    """
+    curve = torch.tensor(features["folded_curve"]).unsqueeze(0).unsqueeze(0).float()
+    tabular = torch.tensor(
+        np.concatenate([features["physics"], features["stats"], features["diagnostics"]])
+    ).unsqueeze(0).float()
+
+    with torch.no_grad():
+        logits = model(curve, tabular)
+        probs = F.softmax(logits, dim=1).squeeze(0).numpy()
+
+    class_names = ["PLANET", "ECLIPSING_BINARY", "BLEND", "FALSE_POSITIVE"]
+    pred_idx = int(np.argmax(probs))
+
+    return {
+        "class_probs": probs.tolist(),
+        "predicted_class": class_names[pred_idx],
+        "confidence": float(probs[pred_idx]),
+    }
