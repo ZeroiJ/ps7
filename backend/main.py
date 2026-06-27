@@ -50,9 +50,18 @@ TEMP_DIR.mkdir(exist_ok=True)
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 ALLOWED_EXTENSIONS = {".csv", ".json", ".npz"}
 
-# In-memory job store  {job_id: {"status": ..., "result": ..., "filename": ...}}
-job_store: dict = {}
+SESSIONS_DIR = Path(tempfile.gettempdir()) / "exovetter_sessions"
+SESSIONS_DIR.mkdir(exist_ok=True)
 
+def get_session(session_id):
+    path = SESSIONS_DIR / f"{session_id}.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    return {"step": "upload", "files": {}, "results": {}}
+
+def save_session(session_id, data):
+    path = SESSIONS_DIR / f"{session_id}.json"
+    path.write_text(json.dumps(data))
 
 # ---------------------------------------------------------------------------
 # Error helpers
@@ -60,7 +69,6 @@ job_store: dict = {}
 
 def _error(status: int, code: str, message: str,
            suggestion: str | None = None) -> JSONResponse:
-    """Return a structured error response."""
     body = ErrorResponse(
         code=code,
         message=message,
@@ -68,170 +76,143 @@ def _error(status: int, code: str, message: str,
     ).model_dump()
     return JSONResponse(status_code=status, content=body)
 
-
 # ---------------------------------------------------------------------------
-# 1. POST /api/upload
+# 1. POST /api/step/upload — Upload & Preprocess
 # ---------------------------------------------------------------------------
 
-@app.post("/api/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...)):
-    """Accept a multipart file upload (.csv, .json, .npz)."""
+from real_pipeline import step1_preprocess, step2_tls, step3_classify
 
-    # --- Extension check ---
+@app.post("/api/step/upload")
+async def step_upload(file: UploadFile = File(...)):
     filename = file.filename or "unknown"
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        return _error(
-            400, "INVALID_FILE_TYPE",
-            f"Unsupported file type '{ext}'.",
-            f"Please upload one of: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
-        )
+        return _error(400, "INVALID_FILE_TYPE", f"Unsupported file type '{ext}'.")
 
-    # --- Read contents & size check ---
     contents = await file.read()
     if len(contents) == 0:
-        return _error(
-            400, "EMPTY_FILE",
-            "The uploaded file is empty.",
-            "Make sure the file contains light-curve data before uploading.",
-        )
+        return _error(400, "EMPTY_FILE", "The uploaded file is empty.")
     if len(contents) > MAX_UPLOAD_BYTES:
-        return _error(
-            413, "FILE_TOO_LARGE",
-            f"File size ({len(contents) / 1e6:.1f} MB) exceeds the 200 MB limit.",
-            "Try trimming the dataset or compressing it as .npz.",
-        )
+        return _error(413, "FILE_TOO_LARGE", "File size exceeds limit.")
 
-    # --- Save to disk ---
-    job_id = uuid.uuid4().hex[:12]
-    save_path = TEMP_DIR / f"{job_id}{ext}"
+    session_id = uuid.uuid4().hex[:12]
+    save_path = TEMP_DIR / f"{session_id}{ext}"
     save_path.write_bytes(contents)
 
-    # --- Parse preview ---
     try:
-        rows, columns, preview = _parse_preview(save_path, ext, contents)
+        res = step1_preprocess(str(save_path), filename)
     except Exception as exc:
-        save_path.unlink(missing_ok=True)
-        return _error(
-            422, "PARSE_ERROR",
-            f"Could not parse the uploaded file: {exc}",
-            "Check that the file is a valid CSV/JSON/NPZ with numerical data.",
-        )
+        return _error(422, "PROCESS_ERROR", str(exc))
 
-    # --- Register job ---
-    job_store[job_id] = {
-        "status": "uploaded",
+    # Save to session
+    session_data = {
+        "step": 1,
         "filename": filename,
         "file_path": str(save_path),
+        "target_name": res["target_name"],
+        "cleaned_time": res["cleaned_time"],
+        "cleaned_flux": res["cleaned_flux"],
+    }
+    save_session(session_id, session_data)
+
+    return {
+        "session_id": session_id,
+        "step": 1,
+        "cleaned_flux_chart_data": {
+            "raw_time": res["raw_time"],
+            "raw_flux": res["raw_flux"],
+            "cleaned_time": res["cleaned_time"],
+            "cleaned_flux": res["cleaned_flux"],
+        },
+        "stats": res["preprocessed"]
     }
 
-    return UploadResponse(
-        job_id=job_id,
-        filename=filename,
-        rows=rows,
-        columns=columns,
-        preview=preview,
-        message=f"File '{filename}' uploaded successfully ({rows} rows).",
-    )
-
-
-def _parse_preview(path: Path, ext: str, raw_bytes: bytes):
-    """Return (row_count, column_names, preview_rows) for supported formats."""
-
-    if ext == ".csv":
-        df = pd.read_csv(path)
-        if df.empty:
-            raise ValueError("CSV file contains no data rows")
-        rows = len(df)
-        columns = df.columns.tolist()
-        preview = df.head(5).replace({np.nan: None}).to_dict(orient="records")
-
-    elif ext == ".json":
-        data = json.loads(raw_bytes)
-        if isinstance(data, list):
-            rows = len(data)
-            columns = list(data[0].keys()) if rows > 0 else []
-            preview = data[:5]
-        elif isinstance(data, dict):
-            # Treat top-level keys as columns, values as arrays
-            columns = list(data.keys())
-            first_len = len(next(iter(data.values()))) if data else 0
-            rows = first_len
-            preview = [
-                {k: (v[i] if i < len(v) else None) for k, v in data.items()}
-                for i in range(min(5, first_len))
-            ]
-        else:
-            raise ValueError("JSON must be a list of objects or a dict of arrays")
-
-    elif ext == ".npz":
-        npz = np.load(path, allow_pickle=False)
-        columns = list(npz.files)
-        shapes = {k: list(npz[k].shape) for k in columns}
-        rows = shapes[columns[0]][0] if columns else 0
-        # Reshape preview to row-oriented for consistency
-        preview = [{"array": k, "shape": shapes[k],
-                     "first_5": npz[k].flat[:5].tolist()} for k in columns]
-
-    else:
-        raise ValueError(f"Unsupported extension: {ext}")
-
-    return rows, columns, preview
-
-
 # ---------------------------------------------------------------------------
-# 2. POST /api/process/{job_id}
+# 2. POST /api/step/tls — Run Transit Search
 # ---------------------------------------------------------------------------
 
-@app.post("/api/process/{job_id}", response_model=ProcessResponse)
-async def process_file(job_id: str):
-    """Run the vetting pipeline on a previously uploaded file."""
-
-    if job_id not in job_store:
-        return _error(404, "JOB_NOT_FOUND",
-                      f"No job with id '{job_id}' exists.",
-                      "Upload a file first via POST /api/upload.")
-
-    job = job_store[job_id]
-    file_path = job.get("file_path", "")
-    filename = job.get("filename", "unknown")
-
-    if not Path(file_path).exists():
-        return _error(404, "FILE_MISSING",
-                      "The uploaded file is no longer available on disk.",
-                      "Please re-upload the file.")
-
-    # Mark as processing
-    job["status"] = "processing"
+@app.post("/api/step/tls")
+async def step_run_tls(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id")
+    session = get_session(session_id)
+    
+    if "cleaned_time" not in session:
+        return _error(400, "SESSION_ERROR", "Invalid session or missing preprocessed data.")
 
     try:
-        # Execute real pipeline
-        result_dict = run_real_pipeline(file_path, filename)
+        res = step2_tls(session["cleaned_time"], session["cleaned_flux"])
     except Exception as exc:
-        job["status"] = "error"
-        job["error"] = str(exc)
-        return ProcessResponse(status="error", error=str(exc))
+        return _error(500, "PROCESS_ERROR", str(exc))
 
-    job["status"] = "done"
-    job["result"] = result_dict
+    tls_res = res["tls_result"]
+    session["tls_dict"] = tls_res
+    session["step"] = 2
+    save_session(session_id, session)
 
-    return ProcessResponse(
-        status="done",
-        result=PipelineResult(**result_dict),
-    )
-
+    return {
+        "session_id": session_id,
+        "step": 2,
+        "period": tls_res["period"],
+        "depth": tls_res["depth"],
+        "snr": tls_res["snr"],
+        "sde": tls_res["sde"],
+        "duration": tls_res["duration"],
+        "periodogram_chart_data": {
+            "frequency": tls_res["periods"],
+            "power": tls_res["power"],
+        },
+        "phase_fold_chart_data": {
+            "phase": tls_res["folded_time"],
+            "flux": tls_res["folded_flux"],
+            "model": tls_res["folded_model"],
+        }
+    }
 
 # ---------------------------------------------------------------------------
-# 3. GET /api/sample-data
+# 3. POST /api/step/classify — Classify & Final Verdict
 # ---------------------------------------------------------------------------
 
-@app.get("/api/sample-data", response_model=UploadResponse)
-@app.post("/api/sample-data", response_model=UploadResponse)
-async def get_sample_data(target: str = "TOI-270"):
-    """Return a pre-packaged real TESS light curve as an upload."""
-    sample_dir = Path(__file__).resolve().parent / "sample_data"
+@app.post("/api/step/classify")
+async def step_run_classify(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id")
+    session = get_session(session_id)
     
-    # Map target names to filenames
+    if "tls_dict" not in session:
+        return _error(400, "SESSION_ERROR", "Invalid session or missing TLS data.")
+
+    try:
+        res = step3_classify(
+            session["cleaned_time"], 
+            session["cleaned_flux"], 
+            session["tls_dict"], 
+            session["target_name"]
+        )
+    except Exception as exc:
+        return _error(500, "PROCESS_ERROR", str(exc))
+
+    cls = res["classification"]
+    session["step"] = 3
+    session["final_result"] = res
+    save_session(session_id, session)
+
+    return {
+        "session_id": session_id,
+        "step": 3,
+        "verdict": cls["predicted_class"],
+        "confidence": cls["confidence"],
+        "classification_chart_data": res["plots"]["classification_bars"],
+        "all_metrics": res,
+    }
+
+# ---------------------------------------------------------------------------
+# Sample Data Endpoint (Simulates step 1)
+# ---------------------------------------------------------------------------
+@app.get("/api/sample-data")
+@app.post("/api/sample-data")
+async def get_sample_data(target: str = "TOI-270"):
+    sample_dir = Path(__file__).resolve().parent / "sample_data"
     sample_files = {
         "TOI-270": "TOI_270.npz",
         "TOI-700": "TOI_700.npz",
@@ -239,68 +220,42 @@ async def get_sample_data(target: str = "TOI-270"):
         "TOI-1231": "TOI_1231.npz",
         "TOI-2180": "TOI_2180.npz",
     }
-    
     filename = sample_files.get(target, "TOI_270.npz")
     filepath = sample_dir / filename
     
     if not filepath.exists():
         raise HTTPException(404, f"Sample data not found for {target}")
     
-    # Simulate an upload by creating a temp copy and registering a job
-    job_id = str(uuid.uuid4().hex[:12])
-    ext = ".npz"
-    save_path = TEMP_DIR / f"{job_id}{ext}"
-    save_path.parent.mkdir(parents=True, exist_ok=True)
+    session_id = uuid.uuid4().hex[:12]
+    save_path = TEMP_DIR / f"{session_id}.npz"
     shutil.copy(filepath, save_path)
     
-    # Parse and return preview (same logic as upload endpoint)
-    npz = np.load(save_path, allow_pickle=False)
-    columns = list(npz.files)
-    shapes = {k: list(npz[k].shape) for k in columns}
-    rows = shapes[columns[0]][0] if columns else 0
-    preview = [{"array": k, "shape": shapes[k],
-                "first_5": npz[k].flat[:5].tolist()} for k in columns]
-    
-    job_store[job_id] = {
-        "status": "uploaded",
-        "file_path": str(save_path),
+    try:
+        res = step1_preprocess(str(save_path), filename)
+    except Exception as exc:
+        return _error(500, "PROCESS_ERROR", str(exc))
+
+    session_data = {
+        "step": 1,
         "filename": filename,
+        "file_path": str(save_path),
+        "target_name": res["target_name"],
+        "cleaned_time": res["cleaned_time"],
+        "cleaned_flux": res["cleaned_flux"],
     }
-    
-    return UploadResponse(
-        job_id=job_id,
-        filename=filename,
-        rows=rows,
-        columns=columns,
-        preview=preview,
-        message="Sample data loaded",
-    )
+    save_session(session_id, session_data)
 
-
-# ---------------------------------------------------------------------------
-# 4. GET /api/status/{job_id}
-# ---------------------------------------------------------------------------
-
-@app.get("/api/status/{job_id}")
-async def get_status(job_id: str):
-    """Check the current processing status of a job."""
-
-    if job_id not in job_store:
-        return _error(404, "JOB_NOT_FOUND",
-                      f"No job with id '{job_id}' exists.",
-                      "Upload a file first via POST /api/upload.")
-
-    job = job_store[job_id]
-    status = job.get("status", "unknown")
-
-    payload: dict = {"status": status, "job_id": job_id}
-
-    if status == "done" and "result" in job:
-        payload["result_available"] = True
-    if status == "error":
-        payload["error"] = job.get("error", "Unknown error")
-
-    return payload
+    return {
+        "session_id": session_id,
+        "step": 1,
+        "cleaned_flux_chart_data": {
+            "raw_time": res["raw_time"],
+            "raw_flux": res["raw_flux"],
+            "cleaned_time": res["cleaned_time"],
+            "cleaned_flux": res["cleaned_flux"],
+        },
+        "stats": res["preprocessed"]
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -310,20 +265,11 @@ async def get_status(job_id: str):
 @app.get("/api/download/{job_id}")
 async def download_results(job_id: str):
     """Download pipeline results as a ZIP archive."""
+    session = get_session(job_id)
+    if "final_result" not in session:
+        return _error(409, "NOT_PROCESSED", "Pipeline has not finished for this job.")
 
-    if job_id not in job_store:
-        return _error(404, "JOB_NOT_FOUND",
-                      f"No job with id '{job_id}' exists.",
-                      "Upload and process a file first.")
-
-    job = job_store[job_id]
-
-    if job.get("status") != "done" or "result" not in job:
-        return _error(409, "NOT_PROCESSED",
-                      "Pipeline has not finished for this job.",
-                      "Call POST /api/process/{job_id} first and wait for status 'done'.")
-
-    result = job["result"]
+    result = session["final_result"]
     target = result.get("target_name", job_id)
 
     # --- Build ZIP in memory ---

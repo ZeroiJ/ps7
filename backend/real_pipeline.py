@@ -176,34 +176,23 @@ def build_response(target_name, raw_time, raw_flux, time, flux,
     }
 
 
-def run_real_pipeline(file_path: str, filename: str) -> dict:
-    """
-    Run the real 6-step pipeline on an uploaded file.
-    
-    Returns dict matching PipelineResult schema.
-    """
-    # STEP 0: Load raw data from uploaded file
+def step1_preprocess(file_path: str, filename: str) -> dict:
     raw_time, raw_flux = load_file(file_path, filename)
     target_name = Path(filename).stem
     
-    # Point limit for Render free tier memory issues
     MAX_POINTS = 50_000
     if len(raw_time) > MAX_POINTS:
         indices = np.linspace(0, len(raw_time)-1, MAX_POINTS).astype(int)
         raw_time = raw_time[indices]
         raw_flux = raw_flux[indices]
 
-    # Clean and detrend
-    # Remove NaN
     valid = np.isfinite(raw_time) & np.isfinite(raw_flux)
     t, f = raw_time[valid], raw_flux[valid]
     
-    # Sigma clip
     med, std = np.median(f), np.std(f)
     mask = np.abs(f - med) <= 3 * std
     t, f = t[mask], f[mask]
     
-    # Savitzky-Golay detrend
     window = min(101, len(f) - 1)
     if window % 2 == 0: window -= 1
     if window >= 5:
@@ -212,23 +201,70 @@ def run_real_pipeline(file_path: str, filename: str) -> dict:
     else:
         f_detrended = f / med
     flux_clean = f_detrended / np.median(f_detrended)
-    
-    # STEP 1: TLS
+
+    return {
+        "target_name": target_name,
+        "raw_time": raw_time.tolist(),
+        "raw_flux": raw_flux.tolist(),
+        "cleaned_time": t.tolist(),
+        "cleaned_flux": flux_clean.tolist(),
+        "preprocessed": {
+            "n_points": len(t),
+            "n_points_raw": len(raw_time),
+            "time_span": round(float(t[-1] - t[0]), 2),
+            "flux_median": round(float(np.median(flux_clean)), 6),
+            "outliers_removed": len(raw_time) - len(t),
+        }
+    }
+
+def step2_tls(t: list, flux_clean: list) -> dict:
     from pipeline.step2_tls import find_period
-    tls_result = find_period(t, flux_clean)
+    t_np = np.array(t)
+    f_np = np.array(flux_clean)
+    tls_result = find_period(t_np, f_np)
     
-    # STEP 2: Features
+    # Clean non-serializable objects from tls_result if needed, but we will selectively pick fields
+    period = float(tls_result.get("period", 0))
+    depth_frac = 1.0 - float(tls_result.get("depth", 1.0))
+    depth_ppm = round(depth_frac * 1_000_000, 1)
+    duration_hrs = round(float(tls_result.get("duration", 0)) * 24, 3)
+    
+    # For JSON serialization
+    def to_list(k):
+        v = tls_result.get(k, np.array([]))
+        return v.tolist() if isinstance(v, np.ndarray) else list(v)
+
+    serializable_tls = {
+        "period": period,
+        "sde": round(float(tls_result.get("sde", 0)), 1),
+        "depth": depth_ppm,
+        "duration": duration_hrs,
+        "snr": round(float(tls_result.get("snr", 0)), 2),
+        "t0": round(float(tls_result.get("t0", 0)), 4),
+        "periods": to_list("periods"),
+        "power": to_list("power"),
+        "folded_time": to_list("folded_time"),
+        "folded_flux": to_list("folded_flux"),
+        "folded_model": to_list("folded_model"),
+    }
+    
+    return {"tls_result": serializable_tls}
+
+def step3_classify(t: list, flux_clean: list, tls_dict: dict, target_name: str) -> dict:
     from pipeline.step3_features import extract_features
-    features = extract_features(t, flux_clean, tls_result)
-    
-    # STEP 3: Classify
     from pipeline.step4_classifier import classify
-    classification = classify(features, target_name=target_name)
-    
-    # STEP 4: Parameters
     from pipeline.step5_params import estimate_parameters
+    
+    t_np = np.array(t)
+    f_np = np.array(flux_clean)
+    
+    # Reconstruct expected TLS result format for downstream functions
+    tls_result = {k: (np.array(v) if isinstance(v, list) else v) for k, v in tls_dict.items()}
+    
+    features = extract_features(t_np, f_np, tls_result)
+    classification = classify(features, target_name=target_name)
     params = estimate_parameters(tls_result)
     
-    # STEP 5: Build response
-    return build_response(target_name, raw_time, raw_flux, t, flux_clean,
+    # Mock raw data to empty arrays since build_response doesn't strictly need them for step3 UI
+    return build_response(target_name, np.array([]), np.array([]), t_np, f_np,
                           tls_result, features, classification, params)
