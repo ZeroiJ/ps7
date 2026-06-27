@@ -1,7 +1,16 @@
 "use client";
 
 import { useCallback, useRef, useState, useMemo } from "react";
-import { stepUpload, stepRunTLS, stepRunClassify, getSampleData, downloadResults } from "@/lib/api";
+import {
+  stepUpload,
+  stepRunTLS,
+  stepRunFeatures,
+  stepRunClassify,
+  stepRunParameters,
+  stepRunOutput,
+  getSampleData,
+  downloadResults,
+} from "@/lib/api";
 
 import UploadZone from "./components/UploadZone";
 import ChartCard from "./components/ChartCard";
@@ -9,7 +18,7 @@ import MetricCard from "./components/MetricCard";
 import VerdictBadge from "./components/VerdictBadge";
 import Toast from "./components/Toast";
 
-const STEPS = ["Upload", "Preprocess", "Transit Search", "Verify"];
+const STEPS = ["Preprocess", "Transit Search", "Features", "Classify", "Parameters", "Output"];
 
 export default function Home() {
   const uploadRef = useRef<HTMLDivElement>(null);
@@ -23,11 +32,17 @@ export default function Home() {
   const [results, setResults] = useState<{
     preprocess: any;
     tls: any;
+    features: any;
     classify: any;
+    params: any;
+    output: any;
   }>({
     preprocess: null,
     tls: null,
+    features: null,
     classify: null,
+    params: null,
+    output: null,
   });
 
   const showError = useCallback((msg: string) => {
@@ -38,7 +53,7 @@ export default function Home() {
   const handleReset = useCallback(() => {
     setSessionId(null);
     setCurrentStep(0);
-    setResults({ preprocess: null, tls: null, classify: null });
+    setResults({ preprocess: null, tls: null, features: null, classify: null, params: null, output: null });
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
@@ -94,6 +109,22 @@ export default function Home() {
     }
   };
 
+  const handleRunFeatures = async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await stepRunFeatures(sessionId);
+      setResults((prev) => ({ ...prev, features: res }));
+      setCurrentStep(3);
+      setToast({ message: "Features extracted", type: "success" });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Feature extraction failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRunClassify = async () => {
     if (!sessionId) return;
     setLoading(true);
@@ -101,10 +132,42 @@ export default function Home() {
     try {
       const res = await stepRunClassify(sessionId);
       setResults((prev) => ({ ...prev, classify: res }));
-      setCurrentStep(3);
+      setCurrentStep(4);
       setToast({ message: "Classification complete", type: "success" });
     } catch (err) {
       showError(err instanceof Error ? err.message : "Classification failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRunParameters = async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await stepRunParameters(sessionId);
+      setResults((prev) => ({ ...prev, params: res }));
+      setCurrentStep(5);
+      setToast({ message: "Parameters estimated", type: "success" });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Parameter estimation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRunOutput = async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await stepRunOutput(sessionId);
+      setResults((prev) => ({ ...prev, output: res }));
+      setCurrentStep(6);
+      setToast({ message: "Report ready", type: "success" });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Output assembly failed");
     } finally {
       setLoading(false);
     }
@@ -123,16 +186,18 @@ export default function Home() {
   // ── Stepper ──
   const stepper = useMemo(() => {
     if (currentStep === 0) return null;
+    const cur = currentStep > 6 ? 6 : currentStep;
     return (
-      <div className="flex items-center gap-0">
+      <div className="flex items-center gap-0 overflow-x-auto">
         {STEPS.map((label, idx) => {
-          const isActive = idx === currentStep;
-          const isDone = idx < currentStep;
+          const stepNum = idx + 1;
+          const isActive = stepNum === cur;
+          const isDone = stepNum < cur;
           return (
-            <div key={label} className="flex items-center">
+            <div key={label} className="flex items-center shrink-0">
               <div className="flex items-center gap-2">
                 <span
-                  className={`text-sm font-medium transition-colors ${
+                  className={`text-sm font-medium transition-colors whitespace-nowrap ${
                     isDone
                       ? "text-chroma-fg"
                       : isActive
@@ -148,7 +213,7 @@ export default function Home() {
                     height="14"
                     viewBox="0 0 14 14"
                     fill="none"
-                    className="text-chroma-success"
+                    className="text-chroma-success shrink-0"
                   >
                     <path
                       d="M3 7L6 10L11 4"
@@ -162,7 +227,7 @@ export default function Home() {
               </div>
               {idx < STEPS.length - 1 && (
                 <div
-                  className={`w-8 h-px mx-3 ${
+                  className={`w-8 h-px mx-3 shrink-0 ${
                     isDone ? "bg-chroma-fg" : "bg-chroma-border"
                   }`}
                 />
@@ -218,7 +283,6 @@ export default function Home() {
               <span className="text-sm text-chroma-success">Complete</span>
             </div>
 
-            {/* Chart — spans 3 cols */}
             <div className="col-span-3">
               <ChartCard
                 title="Raw vs Cleaned Flux"
@@ -249,29 +313,27 @@ export default function Home() {
               />
             </div>
 
-            {/* Stats — stacked in 1 col */}
             <div className="col-span-1 flex flex-col gap-3">
               <div className="bento-card flex-1 flex flex-col justify-center">
                 <span className="bento-label mb-1">Raw points</span>
                 <span className="text-2xl font-semibold tracking-tight font-mono text-chroma-fg">
-                  {results.preprocess.stats.n_points_raw.toLocaleString()}
+                  {results.preprocess.stats.n_points_raw?.toLocaleString()}
                 </span>
               </div>
               <div className="bento-card flex-1 flex flex-col justify-center">
                 <span className="bento-label mb-1">Outliers removed</span>
                 <span className="text-2xl font-semibold tracking-tight font-mono text-chroma-error">
-                  {results.preprocess.stats.outliers_removed.toLocaleString()}
+                  {results.preprocess.stats.outliers_removed?.toLocaleString()}
                 </span>
               </div>
               <div className="bento-card flex-1 flex flex-col justify-center">
                 <span className="bento-label mb-1">Cleaned points</span>
                 <span className="text-2xl font-semibold tracking-tight font-mono text-chroma-fg">
-                  {results.preprocess.stats.n_points.toLocaleString()}
+                  {results.preprocess.stats.n_points?.toLocaleString()}
                 </span>
               </div>
             </div>
 
-            {/* Action */}
             {currentStep === 1 && (
               <div className="col-span-full flex justify-center pt-2">
                 <button
@@ -294,14 +356,12 @@ export default function Home() {
               <span className="text-sm text-chroma-success">Complete</span>
             </div>
 
-            {/* Metrics — 5 in a row */}
             <MetricCard label="Period" value={results.tls.period.toFixed(4)} unit="days" />
             <MetricCard label="Depth" value={results.tls.depth.toFixed(1)} unit="ppm" />
             <MetricCard label="Duration" value={results.tls.duration.toFixed(1)} unit="hrs" />
             <MetricCard label="SNR" value={results.tls.snr.toFixed(1)} />
             <MetricCard label="SDE" value={results.tls.sde.toFixed(1)} />
 
-            {/* Charts */}
             <div className="col-span-3">
               <ChartCard
                 title="Periodogram"
@@ -348,9 +408,54 @@ export default function Home() {
               />
             </div>
 
-            {/* Action */}
             {currentStep === 2 && (
               <div className="col-span-full flex justify-center pt-2">
+                <button
+                  onClick={handleRunFeatures}
+                  disabled={loading}
+                  className="bg-chroma-primary text-chroma-primary-fg px-5 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                >
+                  {loading ? "Processing..." : "Extract Features"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 3: Features ── */}
+        {currentStep >= 3 && results.features && (
+          <div className={`bento-grid mb-10 ${currentStep === 3 ? "bento-enter" : ""}`}>
+            <div className="col-span-full flex items-center justify-between">
+              <span className="bento-label">Feature Extraction</span>
+              <span className="text-sm text-chroma-success">Complete</span>
+            </div>
+
+            <div className="col-span-full">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Physics</span>
+            </div>
+            <MetricCard label="Period" value={results.features.features.physics[0].toFixed(4)} unit="days" />
+            <MetricCard label="Depth (frac)" value={results.features.features.physics[1].toFixed(6)} />
+            <MetricCard label="Duration" value={results.features.features.physics[2].toFixed(4)} unit="days" />
+            <MetricCard label="SNR" value={results.features.features.physics[3].toFixed(1)} />
+            <MetricCard label="SDE" value={results.features.features.physics[4].toFixed(1)} />
+
+            <div className="col-span-full mt-2">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Statistics</span>
+            </div>
+            <MetricCard label="Skewness" value={results.features.features.stats[0].toFixed(4)} />
+            <MetricCard label="Kurtosis" value={results.features.features.stats[1].toFixed(4)} />
+            <MetricCard label="Std Dev" value={results.features.features.stats[2].toFixed(6)} />
+            <MetricCard label="MAD" value={results.features.features.stats[3].toFixed(6)} />
+            <div className="col-span-1" /> {/* spacer */}
+
+            <div className="col-span-full mt-2">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Diagnostics</span>
+            </div>
+            <MetricCard label="Odd-Even Diff" value={results.features.features.diagnostics[0].toFixed(6)} />
+            <MetricCard label="Secondary Eclipse" value={results.features.features.diagnostics[1].toFixed(6)} />
+
+            {currentStep === 3 && (
+              <div className="col-span-full flex justify-center pt-4">
                 <button
                   onClick={handleRunClassify}
                   disabled={loading}
@@ -363,39 +468,37 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Step 3: Classification ── */}
-        {currentStep === 3 && results.classify && (
-          <div className="bento-grid bento-enter">
+        {/* ── Step 4: Classification ── */}
+        {currentStep >= 4 && results.classify && (
+          <div className={`bento-grid mb-10 ${currentStep === 4 ? "bento-enter" : ""}`}>
             <div className="col-span-full flex items-center justify-between">
               <span className="bento-label">Classification</span>
               <span className="text-sm text-chroma-success">Complete</span>
             </div>
 
-            {/* Verdict Card */}
             <div className="col-span-2 bento-card flex flex-col items-center justify-center py-10">
-              <span className="bento-label mb-4">Final Verdict</span>
+              <span className="bento-label mb-4">Verdict</span>
               <VerdictBadge verdict={results.classify.verdict} />
               <p className="text-sm text-chroma-muted-fg mt-3">
                 Confidence: {(results.classify.confidence * 100).toFixed(1)}%
               </p>
             </div>
 
-            {/* Probabilities Chart */}
             <div className="col-span-3">
               <ChartCard
                 title="Classification Probabilities"
                 data={[{
-                  x: results.classify.classification_chart_data.classes,
-                  y: results.classify.classification_chart_data.probabilities,
+                  x: Object.keys(results.classify.class_probs) as any,
+                  y: Object.values(results.classify.class_probs) as any,
                   type: "bar",
                   marker: {
-                    color: results.classify.classification_chart_data.classes.map((c: string) => {
-                      if (c === "planet") return "#4ade80";
-                      if (c === "fp") return "#ef4444";
+                    color: Object.keys(results.classify.class_probs).map((c: string) => {
+                      if (c === "PLANET" || c === "planet") return "#4ade80";
+                      if (c === "FALSE_POSITIVE" || c === "fp" || c === "false_positive") return "#ef4444";
                       return "#d4d4d4";
                     }),
                   },
-                }]}
+                } as any]}
                 layout={{
                   xaxis: { title: { text: "Class" } },
                   yaxis: { title: { text: "Probability" }, range: [0, 1] },
@@ -403,13 +506,198 @@ export default function Home() {
               />
             </div>
 
+            {currentStep === 4 && (
+              <div className="col-span-full flex justify-center pt-2">
+                <button
+                  onClick={handleRunParameters}
+                  disabled={loading}
+                  className="bg-chroma-primary text-chroma-primary-fg px-5 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                >
+                  {loading ? "Processing..." : "Estimate Parameters"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 5: Parameters ── */}
+        {currentStep >= 5 && results.params && (
+          <div className={`bento-grid mb-10 ${currentStep === 5 ? "bento-enter" : ""}`}>
+            <div className="col-span-full flex items-center justify-between">
+              <span className="bento-label">Parameter Estimation</span>
+              <span className="text-sm text-chroma-success">Complete</span>
+            </div>
+
+            <MetricCard label="Planet Radius" value={results.params.planet_radius_rearth.toFixed(2)} unit="R⊕" />
+            <MetricCard label="Orbital Distance" value={results.params.orbital_distance.toFixed(4)} unit="AU" />
+            <MetricCard label="Equilibrium Temp" value={results.params.equilibrium_temperature} unit="K" />
+            <MetricCard label="Period" value={results.params.orbital_period_days.toFixed(4)} unit="days" />
+            <MetricCard label="Transit Depth" value={results.params.transit_depth_pct.toFixed(3)} unit="%" />
+
+            <div className="col-span-3 bento-card flex flex-col items-center justify-center py-8">
+              <span className="bento-label mb-2">Planet Type</span>
+              <span className="text-xl font-semibold tracking-tight text-chroma-fg">
+                {results.params.planet_radius_rearth < 1.25
+                  ? "Earth-sized"
+                  : results.params.planet_radius_rearth < 2.0
+                  ? "Super-Earth"
+                  : results.params.planet_radius_rearth < 4.0
+                  ? "Sub-Neptune"
+                  : results.params.planet_radius_rearth < 8.0
+                  ? "Neptune-sized"
+                  : results.params.planet_radius_rearth < 12.0
+                  ? "Sub-Jupiter"
+                  : "Jupiter-sized"}
+              </span>
+            </div>
+            <div className="col-span-2 bento-card flex flex-col items-center justify-center py-8">
+              <span className="bento-label mb-2">Duration</span>
+              <span className="text-xl font-semibold tracking-tight font-mono text-chroma-fg">
+                {results.params.transit_duration_hours.toFixed(1)}
+                <span className="text-sm font-normal text-chroma-muted-fg ml-1">hrs</span>
+              </span>
+            </div>
+
+            {currentStep === 5 && (
+              <div className="col-span-full flex justify-center pt-2">
+                <button
+                  onClick={handleRunOutput}
+                  disabled={loading}
+                  className="bg-chroma-primary text-chroma-primary-fg px-5 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                >
+                  {loading ? "Processing..." : "View Full Report"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 6: Output ── */}
+        {currentStep >= 6 && results.output && (
+          <div className="bento-grid bento-enter">
+            <div className="col-span-full flex items-center justify-between">
+              <span className="bento-label">Final Report — {results.output.target_name}</span>
+              <span className="text-sm text-chroma-success">Complete</span>
+            </div>
+
+            {/* Preprocess summary */}
+            <div className="col-span-full flex items-center gap-2">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Preprocessing</span>
+            </div>
+            <MetricCard label="Points" value={results.output.preprocessed.n_points} />
+            <MetricCard label="Time Span" value={results.output.preprocessed.time_span} unit="days" />
+            <MetricCard label="Flux Median" value={results.output.preprocessed.flux_median?.toFixed(6) ?? "-"} />
+
+            {/* TLS summary */}
+            <div className="col-span-full flex items-center gap-2 mt-2">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Transit Parameters</span>
+            </div>
+            <MetricCard label="Period" value={results.output.tls_result.period.toFixed(4)} unit="days" />
+            <MetricCard label="Depth" value={results.output.tls_result.depth.toFixed(1)} unit="ppm" />
+            <MetricCard label="Duration" value={results.output.tls_result.duration.toFixed(1)} unit="hrs" />
+            <MetricCard label="SNR" value={results.output.tls_result.snr.toFixed(1)} />
+            <MetricCard label="SDE" value={results.output.tls_result.sde.toFixed(1)} />
+
+            {/* Classification */}
+            <div className="col-span-full flex items-center gap-2 mt-2">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Classification</span>
+            </div>
+            <div className="col-span-2 bento-card flex flex-col items-center justify-center py-8">
+              <VerdictBadge verdict={results.output.classification.predicted_class} />
+              <p className="text-sm text-chroma-muted-fg mt-3">
+                Confidence: {(results.output.classification.confidence * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div className="col-span-3">
+              <ChartCard
+                title="Classification Probabilities"
+                data={[{
+                  x: Object.keys(results.output.classification.class_probs) as any,
+                  y: Object.values(results.output.classification.class_probs) as any,
+                  type: "bar",
+                  marker: {
+                    color: Object.keys(results.output.classification.class_probs).map((c: string) => {
+                      if (c === "PLANET" || c === "planet") return "#4ade80";
+                      if (c === "FALSE_POSITIVE" || c === "fp" || c === "false_positive") return "#ef4444";
+                      return "#d4d4d4";
+                    }),
+                  },
+                } as any]}
+                layout={{
+                  xaxis: { title: { text: "Class" } },
+                  yaxis: { title: { text: "Probability" }, range: [0, 1] },
+                }}
+              />
+            </div>
+
+            {/* Parameters */}
+            <div className="col-span-full flex items-center gap-2 mt-2">
+              <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">Derived Parameters</span>
+            </div>
+            <MetricCard label="Planet Radius" value={results.output.parameters.planet_radius_rearth.toFixed(2)} unit="R⊕" />
+            <MetricCard label="Semi-Major Axis" value={results.output.parameters.semi_major_axis_au.toFixed(4)} unit="AU" />
+            <MetricCard label="Equilibrium Temp" value={results.output.parameters.equilibrium_temp_k} unit="K" />
+            <MetricCard label="Period" value={results.output.parameters.orbital_period_days.toFixed(4)} unit="days" />
+            <MetricCard label="Depth" value={results.output.parameters.transit_depth_ppm.toFixed(1)} unit="ppm" />
+
+            {/* Plots */}
+            {results.output.plots?.folded_curve?.phase?.length > 0 && (
+              <>
+                <div className="col-span-3">
+                  <ChartCard
+                    title="Periodogram"
+                    data={[{
+                      x: results.output.plots.periodogram.frequency,
+                      y: results.output.plots.periodogram.power,
+                      type: "scatter",
+                      mode: "lines",
+                      line: { color: "#141414", width: 1 },
+                    }]}
+                    layout={{
+                      xaxis: { title: { text: "Frequency (1/d)" } },
+                      yaxis: { title: { text: "Power" } },
+                    }}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <ChartCard
+                    title="Phase-Folded Light Curve"
+                    data={[
+                      {
+                        x: results.output.plots.folded_curve.phase,
+                        y: results.output.plots.folded_curve.flux,
+                        type: "scattergl",
+                        mode: "markers",
+                        marker: { color: "#141414", size: 2 },
+                        name: "Data",
+                      },
+                      {
+                        x: results.output.plots.folded_curve.phase,
+                        y: results.output.plots.folded_curve.model,
+                        type: "scatter",
+                        mode: "lines",
+                        line: { color: "#ef4444", width: 2 },
+                        name: "Model",
+                      },
+                    ]}
+                    layout={{
+                      xaxis: { title: { text: "Phase" } },
+                      yaxis: { title: { text: "Flux" } },
+                      showlegend: true,
+                      legend: { x: 0, y: 1, font: { size: 10 } },
+                    }}
+                  />
+                </div>
+              </>
+            )}
+
             {/* Actions */}
-            <div className="col-span-full flex items-center justify-center gap-4 pt-6 border-t border-chroma-border mt-2">
+            <div className="col-span-full flex items-center justify-center gap-4 pt-6 border-t border-chroma-border mt-4">
               <button
                 onClick={handleDownload}
                 className="bg-chroma-primary text-chroma-primary-fg px-5 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
               >
-                Download Results
+                Download Results (.zip)
               </button>
               <button
                 onClick={handleReset}
@@ -444,7 +732,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Footer ── */}
         <footer className="mt-20 pt-8 border-t border-chroma-border flex items-center justify-between">
           <span className="text-sm text-chroma-muted-fg">ExoVetter</span>
           <span className="text-xs text-chroma-muted-fg">BAH 2026 — Challenge 7</span>

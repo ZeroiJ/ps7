@@ -80,7 +80,7 @@ def _error(status: int, code: str, message: str,
 # 1. POST /api/step/upload — Upload & Preprocess
 # ---------------------------------------------------------------------------
 
-from real_pipeline import step1_preprocess, step2_tls, step3_classify
+from real_pipeline import step1_preprocess, step2_tls, step3_classify, step4_features, step5_params, step6_output
 
 @app.post("/api/step/upload")
 async def step_upload(file: UploadFile = File(...)):
@@ -170,7 +170,39 @@ async def step_run_tls(request: Request):
     }
 
 # ---------------------------------------------------------------------------
-# 3. POST /api/step/classify — Classify & Final Verdict
+# 3. POST /api/step/features — Extract Features (Step 3)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/step/features")
+async def step_run_features(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id")
+    session = get_session(session_id)
+
+    if "tls_dict" not in session:
+        return _error(400, "SESSION_ERROR", "Missing TLS data. Run Transit Search first.")
+
+    try:
+        features = step4_features(
+            session["cleaned_time"],
+            session["cleaned_flux"],
+            session["tls_dict"],
+        )
+    except Exception as exc:
+        return _error(500, "PROCESS_ERROR", str(exc))
+
+    session["features"] = features
+    session["step"] = 3
+    save_session(session_id, session)
+
+    return {
+        "session_id": session_id,
+        "step": 3,
+        "features": features,
+    }
+
+# ---------------------------------------------------------------------------
+# 4. POST /api/step/classify — Classify (Step 4)
 # ---------------------------------------------------------------------------
 
 @app.post("/api/step/classify")
@@ -178,32 +210,114 @@ async def step_run_classify(request: Request):
     data = await request.json()
     session_id = data.get("session_id")
     session = get_session(session_id)
-    
-    if "tls_dict" not in session:
-        return _error(400, "SESSION_ERROR", "Invalid session or missing TLS data.")
 
-    try:
-        res = step3_classify(
-            session["cleaned_time"], 
-            session["cleaned_flux"], 
-            session["tls_dict"], 
-            session["target_name"]
+    if "features" not in session:
+        if "tls_dict" not in session:
+            return _error(400, "SESSION_ERROR", "Missing features data. Run Feature Extraction first.")
+        features = step4_features(
+            session["cleaned_time"],
+            session["cleaned_flux"],
+            session["tls_dict"],
         )
-    except Exception as exc:
-        return _error(500, "PROCESS_ERROR", str(exc))
+        session["features"] = features
+    else:
+        features = session["features"]
 
-    cls = res["classification"]
-    session["step"] = 3
-    session["final_result"] = res
+    from pipeline.step4_classifier import classify as classify_fn
+    feat_dict = {
+        "physics": features["physics"],
+        "stats": features["stats"],
+        "diagnostics": features["diagnostics"],
+        "folded_curve": features.get("folded_curve", [1.0] * 2000),
+    }
+    classification = classify_fn(feat_dict, target_name=session["target_name"])
+
+    session["classification"] = classification
+    session["step"] = 4
     save_session(session_id, session)
 
     return {
         "session_id": session_id,
-        "step": 3,
-        "verdict": cls["predicted_class"],
-        "confidence": cls["confidence"],
-        "classification_chart_data": res["plots"]["classification_bars"],
-        "all_metrics": res,
+        "step": 4,
+        "verdict": classification["predicted_class"],
+        "confidence": classification["confidence"],
+        "class_probs": classification["class_probs"],
+    }
+
+# ---------------------------------------------------------------------------
+# 5. POST /api/step/parameters — Estimate Planet Parameters (Step 5)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/step/parameters")
+async def step_run_parameters(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id")
+    session = get_session(session_id)
+
+    if "tls_dict" not in session:
+        return _error(400, "SESSION_ERROR", "Missing TLS data. Run Transit Search first.")
+
+    try:
+        params = step5_params(session["tls_dict"])
+    except Exception as exc:
+        return _error(500, "PROCESS_ERROR", str(exc))
+
+    session["parameters"] = params
+    session["step"] = 5
+    save_session(session_id, session)
+
+    return {
+        "session_id": session_id,
+        "step": 5,
+        "planet_radius_rearth": params["planet_radius_rearth"],
+        "orbital_distance": params["orbital_distance"],
+        "equilibrium_temperature": params["equilibrium_temperature"],
+        "orbital_period_days": params["orbital_period_days"],
+        "transit_depth_pct": params["transit_depth_pct"],
+        "transit_duration_hours": params["transit_duration_hours"],
+    }
+
+# ---------------------------------------------------------------------------
+# 6. POST /api/step/output — Final Assembly (Step 6)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/step/output")
+async def step_run_output(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id")
+    session = get_session(session_id)
+
+    missing = [k for k in ("features", "classification", "parameters") if k not in session]
+    if missing:
+        return _error(400, "SESSION_ERROR", f"Missing data: {', '.join(missing)}. Complete earlier steps first.")
+
+    try:
+        result = step6_output(
+            session["target_name"],
+            session["cleaned_time"],
+            session["cleaned_flux"],
+            session["tls_dict"],
+            session["features"],
+            session["classification"],
+            session["parameters"],
+        )
+    except Exception as exc:
+        return _error(500, "PROCESS_ERROR", str(exc))
+
+    session["final_result"] = result
+    session["step"] = 6
+    save_session(session_id, session)
+
+    return {
+        "session_id": session_id,
+        "step": 6,
+        "target_name": result["target_name"],
+        "preprocessed": result["preprocessed"],
+        "tls_result": result["tls_result"],
+        "features": result["features"],
+        "classification": result["classification"],
+        "parameters": result["parameters"],
+        "plots": result["plots"],
     }
 
 # ---------------------------------------------------------------------------

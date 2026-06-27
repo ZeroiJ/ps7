@@ -1,6 +1,17 @@
-import type { UploadResponse, ProcessResponse } from "./types";
-
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+async function postJSON(url: string, body: object) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(err.message || `Request failed: ${res.statusText}`);
+  }
+  return res.json();
+}
 
 export async function stepUpload(file: File) {
   const formData = new FormData();
@@ -9,28 +20,31 @@ export async function stepUpload(file: File) {
     method: "POST",
     body: formData,
   });
-  if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || `Upload failed: ${res.statusText}`);
+  }
   return res.json();
 }
 
 export async function stepRunTLS(sessionId: string) {
-  const res = await fetch(`${API_BASE}/api/step/tls`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId }),
-  });
-  if (!res.ok) throw new Error(`TLS search failed: ${res.statusText}`);
-  return res.json();
+  return postJSON(`${API_BASE}/api/step/tls`, { session_id: sessionId });
+}
+
+export async function stepRunFeatures(sessionId: string) {
+  return postJSON(`${API_BASE}/api/step/features`, { session_id: sessionId });
 }
 
 export async function stepRunClassify(sessionId: string) {
-  const res = await fetch(`${API_BASE}/api/step/classify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId }),
-  });
-  if (!res.ok) throw new Error(`Classification failed: ${res.statusText}`);
-  return res.json();
+  return postJSON(`${API_BASE}/api/step/classify`, { session_id: sessionId });
+}
+
+export async function stepRunParameters(sessionId: string) {
+  return postJSON(`${API_BASE}/api/step/parameters`, { session_id: sessionId });
+}
+
+export async function stepRunOutput(sessionId: string) {
+  return postJSON(`${API_BASE}/api/step/output`, { session_id: sessionId });
 }
 
 export async function getSampleData() {

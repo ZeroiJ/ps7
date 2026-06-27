@@ -257,6 +257,56 @@ def step2_tls(t: list, flux_clean: list) -> dict:
     
     return {"tls_result": serializable_tls}
 
+def _restore_tls_units(tls_dict: dict) -> dict:
+    """Convert tls_dict from API units (ppm, hours) back to pipeline units (fractional, days)."""
+    result = {k: (np.array(v) if isinstance(v, list) else v) for k, v in tls_dict.items()}
+    if "depth" in result:
+        depth_ppm = float(result["depth"])
+        result["depth"] = np.float64(1.0 - (depth_ppm / 1_000_000.0))
+    if "duration" in result:
+        duration_hrs = float(result["duration"])
+        result["duration"] = np.float64(duration_hrs / 24.0)
+    return result
+
+
+def step4_features(t: list, flux_clean: list, tls_dict: dict) -> dict:
+    from pipeline.step3_features import extract_features
+    t_np = np.array(t)
+    f_np = np.array(flux_clean)
+    tls_result = _restore_tls_units(tls_dict)
+    features = extract_features(t_np, f_np, tls_result)
+    return {
+        "physics": [float(x) for x in features["physics"]],
+        "stats": [float(x) for x in features["stats"]],
+        "diagnostics": [float(x) for x in features["diagnostics"]],
+        "folded_curve": features["folded_curve"].tolist(),
+    }
+
+
+def step5_params(tls_dict: dict) -> dict:
+    from pipeline.step5_params import estimate_parameters
+    tls_result = _restore_tls_units(tls_dict)
+    params = estimate_parameters(tls_result)
+    return params
+
+
+def step6_output(target_name, time, flux, tls_dict, features, classification, params) -> dict:
+    t_np = np.array(time)
+    f_np = np.array(flux)
+    tls_result = _restore_tls_units(tls_dict)
+
+    feat_dict = {
+        "physics": np.array(features["physics"]),
+        "stats": np.array(features["stats"]),
+        "diagnostics": np.array(features["diagnostics"]),
+    }
+
+    return build_response(
+        target_name, np.array([]), np.array([]), t_np, f_np,
+        tls_result, feat_dict, classification, params,
+    )
+
+
 def step3_classify(t: list, flux_clean: list, tls_dict: dict, target_name: str) -> dict:
     from pipeline.step3_features import extract_features
     from pipeline.step4_classifier import classify
@@ -264,9 +314,7 @@ def step3_classify(t: list, flux_clean: list, tls_dict: dict, target_name: str) 
     
     t_np = np.array(t)
     f_np = np.array(flux_clean)
-    
-    # Reconstruct expected TLS result format for downstream functions
-    tls_result = {k: (np.array(v) if isinstance(v, list) else v) for k, v in tls_dict.items()}
+    tls_result = _restore_tls_units(tls_dict)
     
     features = extract_features(t_np, f_np, tls_result)
     classification = classify(features, target_name=target_name)
