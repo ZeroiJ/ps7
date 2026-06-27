@@ -1,0 +1,34 @@
+# ExoVetter Agent Knowledge Base
+
+## Project Overview
+ExoVetter is an exoplanet candidate vetting web application designed for processing TESS light curves. It takes in time-series flux data, preprocesses it, runs a Transit Least Squares (TLS) search, and classifies the signal (Planet Candidate, Eclipsing Binary, etc.) using a heuristic/ML approach.
+
+## Architecture
+- **Frontend**: Next.js 14+ (React), styled with custom CSS/Tailwind (minimalist "Chroma" design system).
+  - **Hosting**: Cloudflare Pages (Static Export via `next build`).
+  - **State**: Uses `zustand` and local React state to manage a 3-step sequential UI wizard.
+- **Backend**: Python 3.11 + FastAPI.
+  - **Hosting**: Hugging Face Spaces (Docker container, exposing port 7860).
+  - **Dependencies**: `torch`, `lightkurve`, `transitleastsquares`, `numpy`, `pandas`, `scipy`.
+  - **State**: Session-based temporary storage using JSON files in the `/tmp/exovetter_sessions` directory.
+
+## Pipeline Architecture (3-Step Sequential Workflow)
+The backend pipeline is broken down into three distinct API endpoints to prevent timeout/memory issues and provide step-by-step UI updates:
+1. `POST /api/step/upload` - Handles file upload, cleans the data, removes outliers (sigma clipping), and detrends (Savitzky-Golay filter).
+2. `POST /api/step/tls` - Runs Transit Least Squares on the preprocessed data to find period, depth, SNR, and SDE.
+3. `POST /api/step/classify` - Extracts physical/statistical features and determines a final verdict (Planet Candidate, Weak Signal, False Positive, etc.).
+
+## Key Design Principles
+- **Aesthetic**: "Chroma" minimalist design. Typography-forward, highly polished, sleek. Do not use standard Tailwind utility colors if it breaks the Chroma design system.
+- **Frictionless**: No sign-ups, no complex configurations, no tutorials. Users simply drop a file and get results.
+- **Strict Logic Constraint**: Do NOT modify the core math/physics libraries (TLS logic, cleaning algorithms, etc.) unless explicitly instructed. Only adjust the UI/API wrappers.
+
+## Deployment Workflows
+- **Frontend**: Code pushed to `main` branch on GitHub automatically deploys to Cloudflare Pages.
+- **Backend**: Managed via the Hugging Face CLI. Deploy changes using:
+  `cd backend && hf upload ZeroiJ/exovetter-api . . --repo-type space --exclude ".venv/**" --exclude "**/__pycache__/**"`
+
+## Known Nuances
+- **Classification SDE Logic**: The classifier dynamically scales its confidence and label based on the SDE (Signal Detection Efficiency). SDE >= 8 is a Planet, 5-8 is a Candidate, < 5 is a Weak Signal.
+- **Duration Unit Bug**: The TLS algorithm outputs transit duration in days, but the frontend expects hours. The backend (`real_pipeline.py`) explicitly multiplies the duration by 24 before sending it to the frontend.
+- **Memory Limits**: Hugging Face Spaces free tier handles the memory requirements, but we cap datasets at 50,000 points to prevent OOM errors during array operations.
