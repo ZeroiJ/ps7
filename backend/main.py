@@ -26,7 +26,7 @@ import pandas as pd
 import numpy as np
 
 from models import UploadResponse, ProcessResponse, ErrorResponse, PipelineResult
-from real_pipeline import run_real_pipeline
+
 
 # ---------------------------------------------------------------------------
 # App setup
