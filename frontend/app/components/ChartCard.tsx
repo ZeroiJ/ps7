@@ -44,14 +44,12 @@ export default function ChartCard({ title, data, layout }: ChartCardProps) {
   };
 
   return (
-    <div className="rounded-lg border border-chroma-border bg-white p-6 shadow-sm">
+    <div className="bento-card">
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">
-          {title}
-        </span>
+        <span className="bento-label">{title}</span>
         <button
           onClick={handleExport}
-          className="text-xs text-chroma-muted-fg hover:text-chroma-fg transition-colors cursor-pointer px-2 py-1 rounded border border-chroma-border hover:bg-chroma-muted"
+          className="text-xs text-chroma-muted-fg hover:text-chroma-fg transition-colors cursor-pointer"
         >
           Export PNG
         </button>
@@ -62,7 +60,7 @@ export default function ChartCard({ title, data, layout }: ChartCardProps) {
         layout={mergedLayout}
         config={{ responsive: true, displayModeBar: false }}
         useResizeHandler
-        style={{ width: "100%", height: "300px" }}
+        style={{ width: "100%", height: "280px" }}
       />
     </div>
   );

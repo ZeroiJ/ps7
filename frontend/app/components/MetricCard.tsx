@@ -8,8 +8,8 @@ interface MetricCardProps {
 
 export default function MetricCard({ label, value, unit }: MetricCardProps) {
   return (
-    <div className="flex flex-col gap-1 p-5 rounded-lg border border-chroma-border bg-white">
-      <span className="text-2xl font-semibold text-chroma-fg tracking-tight font-mono">
+    <div className="bento-card flex flex-col items-center justify-center text-center py-5">
+      <span className="text-xl font-semibold tracking-tight font-mono text-chroma-fg">
         {typeof value === "number" ? value.toLocaleString() : value}
         {unit && (
           <span className="text-sm font-normal text-chroma-muted-fg ml-1">
@@ -17,7 +17,7 @@ export default function MetricCard({ label, value, unit }: MetricCardProps) {
           </span>
         )}
       </span>
-      <span className="text-xs text-chroma-muted-fg uppercase tracking-wider">
+      <span className="text-xs text-chroma-muted-fg mt-1.5 uppercase tracking-wider">
         {label}
       </span>
     </div>

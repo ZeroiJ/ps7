@@ -13,11 +13,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getExtBadge(name: string): string {
-  const ext = name.split(".").pop()?.toUpperCase() || "";
-  return ext;
-}
-
 export default function UploadZone({ onFileAccepted }: UploadZoneProps) {
   const [file, setFile] = useState<File | null>(null);
 
@@ -49,103 +44,67 @@ export default function UploadZone({ onFileAccepted }: UploadZoneProps) {
 
   if (file) {
     return (
-      <div className="w-full max-w-3xl mx-auto px-6">
-        <div className="rounded-lg border border-chroma-border p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {/* File icon */}
-              <div className="w-10 h-10 rounded-lg bg-chroma-muted flex items-center justify-center">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-chroma-muted-fg"
-                >
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-chroma-fg">
-                  {file.name}
-                </span>
-                <span className="text-xs text-chroma-muted-fg">
-                  {formatFileSize(file.size)}
-                </span>
-              </div>
-              <span className="px-2 py-0.5 rounded text-xs font-mono bg-chroma-muted text-chroma-muted-fg">
-                {getExtBadge(file.name)}
-              </span>
-            </div>
-            <button
-              onClick={removeFile}
-              className="p-1.5 rounded-lg hover:bg-chroma-muted transition-colors cursor-pointer"
-              aria-label="Remove file"
+      <div className="bento-card-muted flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 flex items-center justify-center border border-chroma-border bg-chroma-bg">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className="text-chroma-muted-fg"
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M4 4L12 12M12 4L4 12"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-chroma-fg">{file.name}</p>
+            <p className="text-xs text-chroma-muted-fg mt-0.5">
+              {formatFileSize(file.size)}
+            </p>
           </div>
         </div>
+        <button
+          onClick={removeFile}
+          className="text-xs text-chroma-muted-fg hover:text-chroma-fg transition-colors cursor-pointer border border-chroma-border px-3 py-1.5 hover:bg-chroma-muted"
+          aria-label="Remove file"
+        >
+          Remove
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-6">
-      <div
-        {...getRootProps()}
-        className={`min-h-[300px] rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-4 cursor-pointer transition-colors ${
-          isDragActive
-            ? "border-chroma-primary bg-chroma-muted"
-            : "border-chroma-border hover:border-chroma-muted-fg"
-        }`}
+    <div
+      {...getRootProps()}
+      className={`bento-card-muted flex flex-col items-center justify-center py-16 cursor-pointer transition-colors ${
+        isDragActive ? "border-chroma-fg bg-chroma-muted" : ""
+      }`}
+    >
+      <input {...getInputProps()} />
+
+      <svg
+        width="32"
+        height="32"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        className="text-chroma-muted-fg mb-4"
       >
-        <input {...getInputProps()} />
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
 
-        {/* Upload icon */}
-        <svg
-          width="40"
-          height="40"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-chroma-muted-fg"
-        >
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-sm text-chroma-fg font-medium">
-            {isDragActive ? "Drop your file here" : "Drop your file here"}
-          </span>
-          <span className="text-xs text-chroma-muted-fg">
-            CSV, JSON, NPZ up to 200 MB
-          </span>
-        </div>
-      </div>
+      <p className="text-sm text-chroma-fg mb-1">
+        {isDragActive ? "Drop your file" : "Drop your light curve file here"}
+      </p>
+      <p className="text-xs text-chroma-muted-fg">CSV, JSON, NPZ &mdash; up to 200 MB</p>
     </div>
   );
 }
