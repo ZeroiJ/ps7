@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, IBM_Plex_Mono } from "next/font/google";
-import { ThemeProvider } from "./components/ThemeProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -16,7 +15,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ExoVetter -- Exoplanet Transit Analysis",
+  title: "ExoVetter — Exoplanet Transit Analysis",
   description:
     "Upload light curve data and get instant transit detection, classification, and parameter estimation. No sign-up required.",
   keywords: [
@@ -41,7 +40,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans">
-        <ThemeProvider>{children}</ThemeProvider>
+        {children}
       </body>
     </html>
   );
