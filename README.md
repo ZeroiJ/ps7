@@ -1,50 +1,61 @@
 # ExoVetter — Exoplanet Data Analysis
 
-ExoVetter is an ultra-minimalist, single-page web application designed for the ISRO BAH Challenge 7. It allows users to upload light-curve data (CSV, JSON, NPZ) and instantly receive processed results, including transit detection, feature extraction, and classification probabilities.
+ExoVetter is an ultra-minimalist web application for processing TESS light curves. It takes raw flux data (CSV, JSON, NPZ) and sequentially preprocesses it, runs a Transit Least Squares (TLS) search, extracts features, and finally classifies it as a Planet Candidate, Eclipsing Binary, or False Positive.
 
-The UI is inspired by the **Chroma design system** — typography-forward, black, white, and grays, with no unnecessary decorative elements.
+## 🏗 Architecture Overview
 
-## Architecture
+This project uses a decoupled, serverless-friendly architecture:
 
-This project uses a split architecture:
-- **Frontend**: Next.js 14+ (Static HTML Export), Tailwind CSS v4, Plotly.js, Zustand
-- **Backend**: Python FastAPI, Pandas, NumPy (Simulated ML Pipeline)
+- **Frontend**: Next.js 14+ (React), deployed as a static site on **Cloudflare Pages**.
+  - We use **Recharts** for lightweight, performant data visualization (replacing Plotly for faster load times).
+  - The UI utilizes a beautiful, typography-forward "Chroma" bento-grid layout.
+- **Backend**: Python 3.11 + FastAPI, deployed as a Docker container on **Hugging Face Spaces**.
+  - Powered by heavy astronomical libraries (`lightkurve`, `transitleastsquares`, `numpy`, `scipy`).
+  - To bypass memory (OOM) and timeout limits on free tiers, the backend utilizes a **Sequential 6-Step Pipeline**.
 
-## Getting Started Locally
+## ⚙️ How the Backend Works
 
-To run the application locally, you will need two terminal windows.
+Since processing 50,000+ points of astronomical data can crash free-tier servers if done all at once, we broke the pipeline into 6 granular API endpoints. 
+
+1. **Upload & Preprocess** (`/api/step/upload`): Receives the file, runs Sigma Clipping (removes outliers), and applies a Savitzky-Golay filter to flatten the light curve.
+2. **Transit Search** (`/api/step/tls`): Runs the Transit Least Squares algorithm to find the period, depth, and duration.
+3. **Feature Extraction** (`/api/step/features`): Derives physical parameters (like star radius ratios).
+4. **Physical Parameters** (`/api/step/parameters`): (Placeholder for deeper astrophysical calculations).
+5. **Classification** (`/api/step/classify`): Uses heuristics (like Signal Detection Efficiency, SDE) to classify the signal.
+6. **Output** (`/api/step/output`): Aggregates all results for the frontend to download as JSON.
+
+### 💾 Session Storage (State Management)
+Because HTTP requests are stateless and we split the task into 6 steps, the backend saves intermediate arrays (like the cleaned light curve and TLS results) into local JSON files in a temporary directory (`/tmp/exovetter_sessions/<session_id>.json`). 
+
+The frontend simply passes the `session_id` to the next step, allowing the backend to pick up exactly where it left off. This completely avoids sending massive NumPy arrays back and forth over the network. 
+
+### 🛡️ Safety & Resiliency
+NumPy operations frequently produce `NaN` (Not a Number) or `Infinity` values which inherently crash standard JSON parsers. We implemented a custom `SafeJSONResponse` and `NanSafeEncoder` that intercepts all backend API responses and safely converts NaNs to `null` before sending them to the frontend.
+
+## 🚀 Getting Started Locally
 
 ### 1. Start the Backend
-The backend runs on FastAPI and uses a mock pipeline to generate realistic TESS-like transit data.
-
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
-The backend API will be available at `http://localhost:8000`.
+*(Backend runs at `http://localhost:8000`)*
 
 ### 2. Start the Frontend
-The frontend is a Next.js application.
-
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-The frontend will be available at `http://localhost:3000`. 
-By default, it will automatically connect to your local backend.
+*(Frontend runs at `http://localhost:3000`. It will automatically connect to your HF Spaces API unless you override the `NEXT_PUBLIC_API_URL` environment variable.)*
 
-## Deployment
-
-The application is configured to be easily deployed to **Cloudflare Pages** (Frontend) and **Render** (Backend).
-
-Please see the [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for step-by-step instructions.
-
-## Documentation Reference
-All design and technical specifications are located in the `docs/` directory:
-- [Product Requirements (PRD.md)](docs/PRD.md)
-- [Technical Requirements (TRD.md)](docs/TRD.md)
-- [Chroma Style Guide (STYLE_GUIDE.md)](docs/STYLE_GUIDE.md)
+## 📦 Deployment
+- **Frontend**: Push to the `main` branch on GitHub to automatically deploy via Cloudflare Pages.
+- **Backend**: Deploy to Hugging Face Spaces using the Hugging Face CLI:
+  ```bash
+  cd backend
+  hf upload <your-username>/exovetter-api . . --repo-type space --exclude ".venv/**" --exclude "**/__pycache__/**"
+  ```
