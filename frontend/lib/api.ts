@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://zeroij-exovetter-api.hf.space";
 
 async function postJSON(url: string, body: object) {
   const res = await fetch(url, {
