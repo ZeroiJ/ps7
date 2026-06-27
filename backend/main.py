@@ -29,6 +29,45 @@ from models import UploadResponse, ProcessResponse, ErrorResponse, PipelineResul
 
 
 # ---------------------------------------------------------------------------
+# NaN-safe JSON encoder
+# ---------------------------------------------------------------------------
+
+class NanSafeEncoder(json.JSONEncoder):
+    """Safe JSON encoder that handles NaN/Inf by converting them to null."""
+    """Convert NaN / Inf to null so JSON serialisation never crashes."""
+    def default(self, obj):
+        if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+            return None
+        return super().default(obj)
+
+    def encode(self, o):
+        return super().encode(self._clean(o))
+
+    def _clean(self, o):
+        if isinstance(o, dict):
+            return {k: self._clean(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [self._clean(v) for v in o]
+        if isinstance(o, float):
+            if np.isnan(o) or np.isinf(o):
+                return None
+            return o
+        if hasattr(o, 'item'):
+            return self._clean(o.item())
+        return o
+
+
+def json_dumps_safe(obj) -> str:
+    """json.dumps with NaN→null protection."""
+    return json.dumps(obj, cls=NanSafeEncoder)
+
+
+def save_session(session_id, data):
+    path = SESSIONS_DIR / f"{session_id}.json"
+    path.write_text(json_dumps_safe(data))
+
+
+# ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
 app = FastAPI(
@@ -36,6 +75,15 @@ app = FastAPI(
     version="0.1.0",
     description="Backend for the ExoVetter exoplanet candidate vetting web app.",
 )
+
+# Override default JSON response to handle NaN/Inf safely
+from fastapi.responses import JSONResponse as FastAPIJSONResponse
+
+class SafeJSONResponse(FastAPIJSONResponse):
+    def render(self, content):
+        return json_dumps_safe(content).encode("utf-8")
+
+app.default_response_class = SafeJSONResponse
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,10 +106,6 @@ def get_session(session_id):
     if path.exists():
         return json.loads(path.read_text())
     return {"step": "upload", "files": {}, "results": {}}
-
-def save_session(session_id, data):
-    path = SESSIONS_DIR / f"{session_id}.json"
-    path.write_text(json.dumps(data))
 
 # ---------------------------------------------------------------------------
 # Error helpers

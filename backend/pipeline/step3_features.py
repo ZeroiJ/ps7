@@ -32,6 +32,9 @@ def extract_features(
         return _empty_features()
 
     period = tls_results["period"]
+    if not np.isfinite(period) or period <= 0:
+        return _empty_features()
+
     depth_frac = 1.0 - tls_results["depth"]
     duration = tls_results["duration"]
     snr = tls_results["snr"]
