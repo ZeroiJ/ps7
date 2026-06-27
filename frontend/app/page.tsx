@@ -273,7 +273,7 @@ export default function Home() {
         )}
 
         {/* ── Step 1: Preprocess Results ── */}
-        {currentStep >= 1 && results.preprocess && (
+        {currentStep === 1 && results.preprocess && (
           <div
             className={`bento-grid mb-10 ${currentStep === 1 ? "bento-enter" : ""}`}
             ref={currentStep === 1 ? uploadRef : null}
@@ -344,7 +344,7 @@ export default function Home() {
         )}
 
         {/* ── Step 2: TLS Results ── */}
-        {currentStep >= 2 && results.tls && (
+        {currentStep === 2 && results.tls && (
           <div className={`bento-grid mb-10 ${currentStep === 2 ? "bento-enter" : ""}`}>
             <div className="col-span-full flex items-center justify-between">
               <span className="bento-label">Transit Search</span>
@@ -409,7 +409,7 @@ export default function Home() {
         )}
 
         {/* ── Step 3: Features ── */}
-        {currentStep >= 3 && results.features && (
+        {currentStep === 3 && results.features && (
           <div className={`bento-grid mb-10 ${currentStep === 3 ? "bento-enter" : ""}`}>
             <div className="col-span-full flex items-center justify-between">
               <span className="bento-label">Feature Extraction</span>
@@ -455,7 +455,7 @@ export default function Home() {
         )}
 
         {/* ── Step 4: Classification ── */}
-        {currentStep >= 4 && results.classify && (
+        {currentStep === 4 && results.classify && (
           <div className={`bento-grid mb-10 ${currentStep === 4 ? "bento-enter" : ""}`}>
             <div className="col-span-full flex items-center justify-between">
               <span className="bento-label">Classification</span>
@@ -499,7 +499,7 @@ export default function Home() {
         )}
 
         {/* ── Step 5: Parameters ── */}
-        {currentStep >= 5 && results.params && (
+        {currentStep === 5 && results.params && (
           <div className={`bento-grid mb-10 ${currentStep === 5 ? "bento-enter" : ""}`}>
             <div className="col-span-full flex items-center justify-between">
               <span className="bento-label">Parameter Estimation</span>
@@ -551,7 +551,7 @@ export default function Home() {
         )}
 
         {/* ── Step 6: Output ── */}
-        {currentStep >= 6 && results.output && (
+        {currentStep === 6 && results.output && (
           <div className="bento-grid bento-enter">
             <div className="col-span-full flex items-center justify-between">
               <span className="bento-label">Final Report — {results.output.target_name}</span>
