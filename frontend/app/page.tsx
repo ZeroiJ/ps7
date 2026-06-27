@@ -286,30 +286,25 @@ export default function Home() {
             <div className="col-span-3">
               <ChartCard
                 title="Raw vs Cleaned Flux"
-                data={[
+                series={[
                   {
+                    name: "Raw",
                     x: results.preprocess.cleaned_flux_chart_data.raw_time,
                     y: results.preprocess.cleaned_flux_chart_data.raw_flux,
-                    type: "scattergl",
-                    mode: "markers",
-                    marker: { color: "#d4d4d4", size: 2 },
-                    name: "Raw",
+                    color: "#d4d4d4",
+                    dots: true,
                   },
                   {
+                    name: "Cleaned",
                     x: results.preprocess.cleaned_flux_chart_data.cleaned_time,
                     y: results.preprocess.cleaned_flux_chart_data.cleaned_flux,
-                    type: "scattergl",
-                    mode: "markers",
-                    marker: { color: "#141414", size: 2 },
-                    name: "Cleaned",
+                    color: "#141414",
+                    dots: true,
                   },
                 ]}
-                layout={{
-                  xaxis: { title: { text: "Time (BTJD)" } },
-                  yaxis: { title: { text: "Flux" } },
-                  showlegend: true,
-                  legend: { x: 0, y: 1, font: { size: 10 } },
-                }}
+                xLabel="Time (BTJD)"
+                yLabel="Flux"
+                showLegend
               />
             </div>
 
@@ -365,46 +360,37 @@ export default function Home() {
             <div className="col-span-3">
               <ChartCard
                 title="Periodogram"
-                data={[{
+                series={[{
+                  name: "Power",
                   x: results.tls.periodogram_chart_data.frequency,
                   y: results.tls.periodogram_chart_data.power,
-                  type: "scatter",
-                  mode: "lines",
-                  line: { color: "#141414", width: 1 },
+                  color: "#141414",
                 }]}
-                layout={{
-                  xaxis: { title: { text: "Frequency (1/d)" } },
-                  yaxis: { title: { text: "Power" } },
-                }}
+                xLabel="Frequency (1/d)"
+                yLabel="Power"
               />
             </div>
             <div className="col-span-2">
               <ChartCard
                 title="Phase-Folded Light Curve"
-                data={[
+                series={[
                   {
+                    name: "Data",
                     x: results.tls.phase_fold_chart_data.phase,
                     y: results.tls.phase_fold_chart_data.flux,
-                    type: "scattergl",
-                    mode: "markers",
-                    marker: { color: "#141414", size: 2 },
-                    name: "Data",
+                    color: "#141414",
+                    dots: true,
                   },
                   {
+                    name: "Model",
                     x: results.tls.phase_fold_chart_data.phase,
                     y: results.tls.phase_fold_chart_data.model,
-                    type: "scatter",
-                    mode: "lines",
-                    line: { color: "#ef4444", width: 2 },
-                    name: "Model",
+                    color: "#ef4444",
                   },
                 ]}
-                layout={{
-                  xaxis: { title: { text: "Phase" } },
-                  yaxis: { title: { text: "Flux" } },
-                  showlegend: true,
-                  legend: { x: 0, y: 1, font: { size: 10 } },
-                }}
+                xLabel="Phase"
+                yLabel="Flux"
+                showLegend
               />
             </div>
 
@@ -487,22 +473,14 @@ export default function Home() {
             <div className="col-span-3">
               <ChartCard
                 title="Classification Probabilities"
-                data={[{
-                  x: Object.keys(results.classify.class_probs) as any,
-                  y: Object.values(results.classify.class_probs) as any,
-                  type: "bar",
-                  marker: {
-                    color: Object.keys(results.classify.class_probs).map((c: string) => {
-                      if (c === "PLANET" || c === "planet") return "#4ade80";
-                      if (c === "FALSE_POSITIVE" || c === "fp" || c === "false_positive") return "#ef4444";
-                      return "#d4d4d4";
-                    }),
-                  },
-                } as any]}
-                layout={{
-                  xaxis: { title: { text: "Class" } },
-                  yaxis: { title: { text: "Probability" }, range: [0, 1] },
-                }}
+                series={[{
+                  name: "Probability",
+                  x: Object.keys(results.classify.class_probs),
+                  y: Object.values(results.classify.class_probs) as number[],
+                  color: "#4ade80",
+                }]}
+                xLabel="Class"
+                yLabel="Probability"
               />
             </div>
 
@@ -611,22 +589,14 @@ export default function Home() {
             <div className="col-span-3">
               <ChartCard
                 title="Classification Probabilities"
-                data={[{
-                  x: Object.keys(results.output.classification.class_probs) as any,
-                  y: Object.values(results.output.classification.class_probs) as any,
-                  type: "bar",
-                  marker: {
-                    color: Object.keys(results.output.classification.class_probs).map((c: string) => {
-                      if (c === "PLANET" || c === "planet") return "#4ade80";
-                      if (c === "FALSE_POSITIVE" || c === "fp" || c === "false_positive") return "#ef4444";
-                      return "#d4d4d4";
-                    }),
-                  },
-                } as any]}
-                layout={{
-                  xaxis: { title: { text: "Class" } },
-                  yaxis: { title: { text: "Probability" }, range: [0, 1] },
-                }}
+                series={[{
+                  name: "Probability",
+                  x: Object.keys(results.output.classification.class_probs),
+                  y: Object.values(results.output.classification.class_probs) as number[],
+                  color: "#4ade80",
+                }]}
+                xLabel="Class"
+                yLabel="Probability"
               />
             </div>
 
@@ -646,46 +616,37 @@ export default function Home() {
                 <div className="col-span-3">
                   <ChartCard
                     title="Periodogram"
-                    data={[{
+                    series={[{
+                      name: "Power",
                       x: results.output.plots.periodogram.frequency,
                       y: results.output.plots.periodogram.power,
-                      type: "scatter",
-                      mode: "lines",
-                      line: { color: "#141414", width: 1 },
+                      color: "#141414",
                     }]}
-                    layout={{
-                      xaxis: { title: { text: "Frequency (1/d)" } },
-                      yaxis: { title: { text: "Power" } },
-                    }}
+                    xLabel="Frequency (1/d)"
+                    yLabel="Power"
                   />
                 </div>
                 <div className="col-span-2">
                   <ChartCard
                     title="Phase-Folded Light Curve"
-                    data={[
+                    series={[
                       {
+                        name: "Data",
                         x: results.output.plots.folded_curve.phase,
                         y: results.output.plots.folded_curve.flux,
-                        type: "scattergl",
-                        mode: "markers",
-                        marker: { color: "#141414", size: 2 },
-                        name: "Data",
+                        color: "#141414",
+                        dots: true,
                       },
                       {
+                        name: "Model",
                         x: results.output.plots.folded_curve.phase,
                         y: results.output.plots.folded_curve.model,
-                        type: "scatter",
-                        mode: "lines",
-                        line: { color: "#ef4444", width: 2 },
-                        name: "Model",
+                        color: "#ef4444",
                       },
                     ]}
-                    layout={{
-                      xaxis: { title: { text: "Phase" } },
-                      yaxis: { title: { text: "Flux" } },
-                      showlegend: true,
-                      legend: { x: 0, y: 1, font: { size: 10 } },
-                    }}
+                    xLabel="Phase"
+                    yLabel="Flux"
+                    showLegend
                   />
                 </div>
               </>
