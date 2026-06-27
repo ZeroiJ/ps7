@@ -36,9 +36,16 @@ def load_file(file_path: str, filename: str) -> tuple[np.ndarray, np.ndarray]:
             
     elif ext == ".npz":
         npz = np.load(file_path, allow_pickle=False)
-        # Prioritize common key names
-        time = npz.get("time", npz.get("t", npz[list(npz.files)[0]])).astype(np.float64)
-        flux = npz.get("flux", npz.get("f", npz[list(npz.files)[1]])).astype(np.float64)
+        
+        def get_npz_data(npz_obj, primary_key, secondary_key, default_index):
+            if primary_key in npz_obj:
+                return npz_obj[primary_key]
+            elif secondary_key in npz_obj:
+                return npz_obj[secondary_key]
+            return npz_obj[list(npz_obj.files)[default_index]]
+        
+        time = get_npz_data(npz, "time", "t", 0).astype(np.float64)
+        flux = get_npz_data(npz, "flux", "f", 1).astype(np.float64)
         
     else:
         raise ValueError(f"Unsupported format: {ext}")
