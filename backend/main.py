@@ -70,12 +70,6 @@ def save_session(session_id, data):
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
-app = FastAPI(
-    title="ExoVetter Data API",
-    version="0.1.0",
-    description="Backend for the ExoVetter exoplanet candidate vetting web app.",
-)
-
 # Override default JSON response to handle NaN/Inf safely
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
@@ -83,7 +77,12 @@ class SafeJSONResponse(FastAPIJSONResponse):
     def render(self, content):
         return json_dumps_safe(content).encode("utf-8")
 
-app.default_response_class = SafeJSONResponse
+app = FastAPI(
+    title="ExoVetter Data API",
+    version="0.1.0",
+    description="Backend for the ExoVetter exoplanet candidate vetting web app.",
+    default_response_class=SafeJSONResponse,
+)
 
 app.add_middleware(
     CORSMiddleware,
