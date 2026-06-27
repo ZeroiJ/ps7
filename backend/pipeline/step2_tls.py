@@ -20,7 +20,7 @@ def find_period(
     time: np.ndarray,
     flux: np.ndarray,
     period_min: float = 0.5,
-    period_max: float = 27.0,
+    period_max: float = 13.5,
 ) -> Dict:
     """
     Use TLS to find the best transit period and model parameters.
@@ -51,6 +51,8 @@ def find_period(
     results = model.power(
         period_min=period_min,
         period_max=period_max,
+        R_star=1.0,       # Solar radius — tells TLS expected transit duration
+        M_star=1.0,       # Solar mass — helps TLS narrow duration search
     )
 
     folded_phase = np.asarray(results.folded_phase, dtype=np.float64)

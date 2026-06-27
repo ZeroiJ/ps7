@@ -187,7 +187,7 @@ def step1_preprocess(file_path: str, filename: str) -> dict:
     raw_time, raw_flux = load_file(file_path, filename)
     target_name = Path(filename).stem
     
-    MAX_POINTS = 50_000
+    MAX_POINTS = 5_000
     if len(raw_time) > MAX_POINTS:
         indices = np.linspace(0, len(raw_time)-1, MAX_POINTS).astype(int)
         raw_time = raw_time[indices]
